@@ -176,6 +176,7 @@ let voterChoice = null;
 let adminBanner = null;
 let resetPending = false;
 let clearPendingOfficeId = null;
+let editingOfficeId = null;
 
 const app = document.getElementById('app');
 
@@ -407,6 +408,27 @@ function renderAdminOffice(office, tally) {
 
   const isLive = office.status === 'live';
   const clearing = clearPendingOfficeId === office.id;
+  const editing = editingOfficeId === office.id;
+
+  if (editing) {
+    return `
+      <div class="office-block">
+        <div class="office-head">
+          <p class="office-title">Editing: ${esc(office.name)}</p>
+        </div>
+        ${tally.total > 0 ? `<div class="status-banner info">${tally.total} vote${tally.total === 1 ? '' : 's'} already recorded for this office. Renaming or removing a nominee won't erase those votes, but votes cast for a name you remove or change will stop being counted. If you want a clean slate, use "Clear ballot" instead of — or in addition to — this edit.</div>` : ''}
+        <label class="field-label">Office name</label>
+        <input type="text" id="editOfficeName-${office.id}" value="${esc(office.name)}">
+        <label class="field-label">Nominees (one per line)</label>
+        <textarea id="editOfficeCandidates-${office.id}">${esc(office.candidates.join('\n'))}</textarea>
+        <div class="row">
+          <button onclick="saveOfficeEdit('${office.id}')">Save changes</button>
+          <button class="ghost" onclick="cancelOfficeEdit()">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <div class="office-block">
       <div class="office-head">
@@ -415,6 +437,7 @@ function renderAdminOffice(office, tally) {
           ${isLive
             ? `<button class="small danger" onclick="closeOffice('${office.id}')">Close</button>`
             : `<button class="small" onclick="openOffice('${office.id}')">Open this office</button>`}
+          ${!clearing ? `<button class="small ghost" onclick="startOfficeEdit('${office.id}')">Edit</button>` : ''}
           ${!clearing ? `<button class="small warn" onclick="requestClearOfficeVotes('${office.id}')">Clear ballot</button>` : ''}
         </div>
       </div>
@@ -431,6 +454,32 @@ function renderAdminOffice(office, tally) {
       ${noteHTML}
     </div>
   `;
+}
+
+function startOfficeEdit(officeId) {
+  clearPendingOfficeId = null;
+  editingOfficeId = officeId;
+  showAdminPanel();
+}
+function cancelOfficeEdit() {
+  editingOfficeId = null;
+  showAdminPanel();
+}
+async function saveOfficeEdit(officeId) {
+  const name = document.getElementById('editOfficeName-' + officeId).value.trim();
+  const candLines = document.getElementById('editOfficeCandidates-' + officeId).value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!name || candLines.length < 2) {
+    adminBanner = null;
+    render(`<div class="status-banner error">Enter an office name and at least two nominees, then try again.</div>`);
+    setTimeout(showAdminPanel, 1600);
+    return;
+  }
+  const config = await loadConfig();
+  config.offices = config.offices.map(o => o.id === officeId ? { ...o, name, candidates: candLines } : o);
+  await setJSON(CONFIG_KEY, config);
+  editingOfficeId = null;
+  adminBanner = `Updated "${name}."`;
+  showAdminPanel();
 }
 
 async function addOffice() {
@@ -699,6 +748,9 @@ window.closePortal = closePortal;
 window.openOffice = openOffice;
 window.closeOffice = closeOffice;
 window.requestClearOfficeVotes = requestClearOfficeVotes;
+window.startOfficeEdit = startOfficeEdit;
+window.cancelOfficeEdit = cancelOfficeEdit;
+window.saveOfficeEdit = saveOfficeEdit;
 window.cancelClearOfficeVotes = cancelClearOfficeVotes;
 window.clearOfficeVotes = clearOfficeVotes;
 window.createRunoff = createRunoff;
